@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     sp = Parser('/APPS/metadata/SEED/' + net + '.dataless')
     days_back = 4
-    number_of_days = 10
+    number_of_days = 30
     
     InfoFile = open('INFO' + str(current_day.year) + '_' +
                     str(current_day.julday).zfill(3) + '_' +
