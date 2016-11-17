@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 
-import client
 import getSNCL
 import getdata
+import os
 from obspy.core import UTCDateTime
-from functools import partial
 from obspy.io.xseed import Parser
 from multiprocessing import Pool
 
@@ -25,8 +24,11 @@ def process_day_net(day, net, sp, clients, debug=False):
     # Find all non 100% data on msd and grab the sncl
     sncls_needed, avails_msd = getdata.check_missing_msd_data(day, net)
 
-    # Get all open epochs for the day using metadata
-    sncls_metadata = getSNCL.get_sncls_parser(sp, day, net)
+    if sp is False:
+        sncls_metadata = []
+    else:
+        # Get all open epochs for the day using metadata
+        sncls_metadata = getSNCL.get_sncls_parser(sp, day, net)
 
     # These are the sncls we need since they aren't on msd
     sncls_missing_msd, avails = getSNCL.check_sncls_msd(sncls_metadata, day)
@@ -38,21 +40,20 @@ def process_day_net(day, net, sp, clients, debug=False):
     if clients['ASL']:
         if debug:
             print('Working on ASL CWB')
-        clientABQ = client.Client(host='136.177.121.21')
+        ip = '136.177.121.21'
         # Try and pick them from the local CWB
-        availsCWBABQ = getdata.grab_CWB_data(sncls_needed, day, clientABQ)
-
+        availsCWBABQ = getdata.grab_CWB_data_jar(sncls_needed, day, ip)
     if clients['NEIC']:
         if debug:
             print('Working on NEIC CWB')
-        clientNEIC = client.Client()
+        ip = '137.227.224.97'
         sncls_needed_NEIC = []
         for pair in zip(sncls_needed, availsCWBABQ):
             if pair[1] < 100.:
                 sncls_needed_NEIC.append(pair[0])
         # Try to grab from Golden anything we are still missing
-        availsCWBNEIC = getdata.grab_CWB_data(sncls_needed_NEIC,
-                                              day, clientNEIC)
+        availsCWBNEIC = getdata.grab_CWB_data_jar(sncls_needed_NEIC,
+                                                  day, ip)
     # Now we write out the new availability
     avails_out = []
     if clients['ASL']:
@@ -76,37 +77,71 @@ def process_day_net(day, net, sp, clients, debug=False):
     return avails_out
 
 
-if __name__ == "__main__":
+def writelog(avails, net, time, debug=False):
+    logDir = 'logs'
+    if not os.path.exists(logDir):
+        os.mkdir(logDir)
+    logName = logDir + '/INFO' + str(time.year) + '_' + \
+        str(time.julday).zfill(3) + '_' + \
+        net
+    InfoFile = open(logName, 'w')
+    for avail in avails:
+        if 'ASL' in avail.keys():
+            if avail['ASL'] > avail['MSD']:
+                InfoFile.write(avail['sncl'] + ', ' + str(avail['Year']) +
+                            ', ' + str(avail['Day']))
+                InfoFile.write(', MSD: ' + str(avail['MSD']))
+                if 'ASL' in avail.keys():
+                    InfoFile.write(', ASL: ' + str(avail['ASL']))
+                if 'NEIC' in avail.keys():
+                    InfoFile.write(', NEIC: ' + str(avail['NEIC']))
+                InfoFile.write('\n')
+    InfoFile.close()
+    emailStr = 'mutt -s  \"Back Fill for ' + str(time.year) + \
+        ' ' + str(time.julday) + '\" -a ' + logName + ' -- \
+        aringler@usgs.gov, tstorm@usgs.gov </dev/null'
+    if debug:
+        print(emailStr)
+    os.system(emailStr)
+    return
 
+
+if __name__ == "__main__":
 
     # Here is a debug flag
     debug = False
-    
+
     # Here is a timing flag
     time = True
-    
+
     # Grab the current day
     current_day = get_current_day()
-    
-    net = 'IC'
-    clients = {'NEIC': True, 'ASL': True}
 
-    sp = Parser('/APPS/metadata/SEED/' + net + '.dataless')
     days_back = 4
-    number_of_days = 10
-    
-    InfoFile = open('INFO' + str(current_day.year) + '_' +
-                    str(current_day.julday).zfill(3) + '_' +
-                    net, 'w')
-    
+    number_of_days = 5
+
     # Make a list of days
     days = [current_day - 24*60*60*(days_back + x) for x in range(number_of_days)]
-    
-    # Need to make a function of one variable without a lambda
-    def proc_part(x):
-        return process_day_net(x, net, sp, clients)
 
-    pool = Pool(10)
-    avails = pool.map(proc_part, days)
-    print(avails)
+    #networks = ['IU', 'CU', 'US', 'IC', 'GT', 'IW', 'NE', 'XX', 'GS', 'NQ']
     
+    networks = ['NE']
+    for net in networks:
+
+        try:
+            sp = Parser('/APPS/metadata/SEED/' + net + '.dataless')
+            clients = {'NEIC': True, 'ASL': True}
+        except:
+            sp = False
+            clients = {'NEIC': False, 'ASL': True}
+
+        # Need to make a function of one variable without a lambda
+        def proc_part(x):
+            return process_day_net(x, net, sp, clients)
+
+        #pool = Pool(4)
+        #avails = pool.map(proc_part, days)
+        for day in days:
+            proc_part(day)
+        avails = [item for sublist in avails for item in sublist]
+        writelog(avails, net, current_day)
