@@ -4,7 +4,83 @@ Functions to get data
 """
 import os
 import glob
+import random
+import string
 from obspy.core import read
+
+def sncls_CWB(stime, ip, net, debug=True):
+    # Get all the sncls that are on the CWB
+    sncls = []
+    javastr = 'java -jar CWBQuery.jar '
+    javastr += '-h ' + ip
+    javastr += ' -lsc'
+    javastr += ' -b ' + stime.strftime('%Y/%m/%d 00:00:00')
+    results = os.popen(javastr).read()
+    results = results.split('\n')
+    for result in results:
+        if result[:2] == net:
+            sncls.append(result[:2] + '.' + result[2:7].replace(' ','') +
+                         '.' + result[10:12].replace(' ','')  +
+                         '.' + result[7:10])
+    if debug:
+        print(sncls)
+    return sncls
+
+
+def grab_CWB_data_jar(sncls, stime, ip, debug=True):
+    new_avails = []
+    stringRan = ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
+    fileName = 'temp' + stringRan
+    batchFile = open(fileName, 'w')
+    CWBsncls = sncls_CWB(stime, ip, sncls[0].split('.')[0])
+    for sncl in sncls:
+        if sncl not in CWBsncls:
+            continue
+        net, sta, loc, chan = sncl.split('.')
+        # Grab the current network
+        javastr = ' -s \"' + net + sta.ljust(5) + chan + loc + '\"'
+        # Grab from the local CWB
+        javastr += ' -h ' + ip
+        # Use the following time
+        javastr += ' -b ' + stime.strftime('%Y/%m/%d 00:00:00')
+        # Get the full day
+        javastr += ' -d 86400'
+        # Grab dcc 512 data type
+        javastr += ' -t dcc512'
+        javastr += ' -o %N_%y_%j.msd'
+        batchFile.write(javastr + '\n')
+        if debug:
+            print javastr
+        # We now have the full query
+    batchFile.close()
+    javaRequest = 'java -jar CWBQuery.jar -f ' + fileName
+    try:
+        os.system(javaRequest)
+    except:
+        print('Problem with: ' + javaRequest)
+    if debug:
+        print('Finished with CWB request')
+    for sncl in sncls:
+        if debug:
+            print('We are on: ' + sncl)
+        net, sta, loc, chan = sncl.split('.')
+        fname = net + (sta.ljust(5)).replace(' ', '_')
+        if loc == '':
+            fname += chan + '__'
+        else:
+            fname += chan + loc
+        fname += '_' + str(stime.year) 
+        fname += '_' + str(stime.julday) + '.msd'
+        if os.path.isfile(fname):
+            st = read(fname)
+            safe_write(st, stime)
+            new_avails.append(get_availability(st))
+            os.remove(fname)
+        else:
+            new_avails.append(0.)
+    if os.path.isfile(fileName):
+        os.remove(fileName)
+    return new_avails
 
 
 def grab_CWB_data(sncls, time, client, debug=False):
