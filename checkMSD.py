@@ -142,11 +142,16 @@ if __name__ == "__main__":
     # Start time
     stime = UTCDateTime.now()
 
-    days_back = 30
-    number_of_days = 30
+    days_back = 15
+    number_of_days = 20
 
     # Make a list of days
     days = [current_day - 24*60*60*(days_back + x) for x in range(number_of_days)]
+
+    # Add in a few more special days.
+    extradays = [180, 120, 90, 60, 30]
+    for day in extradays:
+        days.append(current_day -day*24*60*60)
     networks = ['IU', 'CU', 'US', 'IC', 'GT', 'IW', 'NE', 'XX', 'GS', 'NQ']
     for net in networks:
 

@@ -77,7 +77,7 @@ def grab_CWB_data_jar(sncls, stime, ip, debug=True):
         fname += '_' + str(stime.year)
         fname += '_' + str(stime.julday) + '.msd'
         if os.path.isfile(fname):
-            st = read(fname)
+            st = read(fname, details = True)
             safe_write(st, stime)
             new_avails.append(get_availability(st))
             os.remove(fname)
