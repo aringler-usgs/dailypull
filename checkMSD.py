@@ -3,6 +3,7 @@
 import getSNCL
 import getdata
 import os
+import glob
 from obspy.core import UTCDateTime
 from obspy.io.xseed import Parser
 from multiprocessing import Pool
@@ -85,21 +86,42 @@ def writelog(avails, net, time, debug=False):
         str(time.julday).zfill(3) + '_' + \
         net
     InfoFile = open(logName, 'w')
+    InfoFile.write('Start time:' + str(time) + '\n')
     for avail in avails:
         if 'ASL' in avail.keys():
             if avail['ASL'] > avail['MSD']:
                 InfoFile.write(avail['sncl'] + ', ' + str(avail['Year']) +
-                            ', ' + str(avail['Day']))
+                               ', ' + str(avail['Day']))
                 InfoFile.write(', MSD: ' + str(avail['MSD']))
                 if 'ASL' in avail.keys():
                     InfoFile.write(', ASL: ' + str(avail['ASL']))
                 if 'NEIC' in avail.keys():
                     InfoFile.write(', NEIC: ' + str(avail['NEIC']))
                 InfoFile.write('\n')
+    InfoFile.write('End Time: ' + str(UTCDateTime.now()))
     InfoFile.close()
+    return
+
+
+def emaillog(time):
+    # People to email to
+    emails = ['aringler@usgs.gov', 'tstorm@usgs.gov']
+
+    # Log directory
+    logDir = 'logs'
+
+    # Grab all logs for the day
+    logName = logDir + '/INFO' + str(time.year) + '_' + \
+        str(time.julday).zfill(3) + '_*'
+    logs = glob.glob(logName)
     emailStr = 'mutt -s  \"Back Fill for ' + str(time.year) + \
-        ' ' + str(time.julday) + '\" -a ' + logName + ' -- \
-        aringler@usgs.gov, tstorm@usgs.gov </dev/null'
+        ' ' + str(time.julday) + '\"'
+    for log in logs:
+        emailStr += ' -a ' + log
+    emailStr += ' -- '
+    for email in emails:
+        emailStr += email + ', '
+    emailStr += ' </dev/null'
     if debug:
         print(emailStr)
     os.system(emailStr)
@@ -117,15 +139,15 @@ if __name__ == "__main__":
     # Grab the current day
     current_day = get_current_day()
 
-    days_back = 4
-    number_of_days = 5
+    # Start time
+    stime = UTCDateTime.now()
+
+    days_back = 30
+    number_of_days = 30
 
     # Make a list of days
     days = [current_day - 24*60*60*(days_back + x) for x in range(number_of_days)]
-
-    #networks = ['IU', 'CU', 'US', 'IC', 'GT', 'IW', 'NE', 'XX', 'GS', 'NQ']
-    
-    networks = ['NE']
+    networks = ['IU', 'CU', 'US', 'IC', 'GT', 'IW', 'NE', 'XX', 'GS', 'NQ']
     for net in networks:
 
         try:
@@ -139,9 +161,12 @@ if __name__ == "__main__":
         def proc_part(x):
             return process_day_net(x, net, sp, clients)
 
-        #pool = Pool(4)
-        #avails = pool.map(proc_part, days)
+        # pool = Pool(4)
+        # avails = pool.map(proc_part, days)
+        avails = []
         for day in days:
-            proc_part(day)
+            avails.append(proc_part(day))
         avails = [item for sublist in avails for item in sublist]
-        writelog(avails, net, current_day)
+        writelog(avails, net, stime)
+
+    emaillog(stime)

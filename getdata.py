@@ -8,6 +8,7 @@ import random
 import string
 from obspy.core import read
 
+
 def sncls_CWB(stime, ip, net, debug=True):
     # Get all the sncls that are on the CWB
     sncls = []
@@ -19,8 +20,8 @@ def sncls_CWB(stime, ip, net, debug=True):
     results = results.split('\n')
     for result in results:
         if result[:2] == net:
-            sncls.append(result[:2] + '.' + result[2:7].replace(' ','') +
-                         '.' + result[10:12].replace(' ','')  +
+            sncls.append(result[:2] + '.' + result[2:7].replace(' ', '') +
+                         '.' + result[10:12].replace(' ', '') +
                          '.' + result[7:10])
     if debug:
         print(sncls)
@@ -29,10 +30,14 @@ def sncls_CWB(stime, ip, net, debug=True):
 
 def grab_CWB_data_jar(sncls, stime, ip, debug=True):
     new_avails = []
-    stringRan = ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
+    letters = string.ascii_uppercase
+    stringRan = ''.join(random.choice(letters) for _ in range(10))
     fileName = 'temp' + stringRan
     batchFile = open(fileName, 'w')
-    CWBsncls = sncls_CWB(stime, ip, sncls[0].split('.')[0])
+    if len(sncls) > 0:
+        CWBsncls = sncls_CWB(stime, ip, sncls[0].split('.')[0])
+    else:
+        CWBsncls = []
     for sncl in sncls:
         if sncl not in CWBsncls:
             continue
@@ -69,7 +74,7 @@ def grab_CWB_data_jar(sncls, stime, ip, debug=True):
             fname += chan + '__'
         else:
             fname += chan + loc
-        fname += '_' + str(stime.year) 
+        fname += '_' + str(stime.year)
         fname += '_' + str(stime.julday) + '.msd'
         if os.path.isfile(fname):
             st = read(fname)
@@ -171,7 +176,7 @@ def safe_add(st1, st2):
 
 
 def safe_write(st, time):
-    path = os.getcwd()
+    path = '/msd/'
     if len(st) > 0:
         net, sta, loc, chan = str(st[0].id).split('.')
         curpath = path + '/' + net + '_' + sta
@@ -184,8 +189,24 @@ def safe_write(st, time):
         if not os.path.exists(curpath):
             os.mkdir(curpath)
         curpath += '/' + loc + '_' + chan + '.512.seed'
-        if os.path.exists(curpath):
-            st2 = read(curpath)
-            st = safe_add(st, st2)
-        st.write(curpath, format="MSEED", reclen=512)
+    if get_availability(st) == 100.:
+        try:
+            st.write(curpath, format="MSEED", reclen=512)
+            os.system('./DQseed -Q -b 512' + ' ' + curpath)
+        except:
+            print('Unable to write: ' + curpath)
+    elif os.path.exists(curpath):
+        st2 = read(curpath)
+        if get_availability(st) > get_availability(st2):
+            try:
+                st.write(curpath, format="MSEED", reclen=512)
+                os.system('./DQseed -Q -b 512' + ' ' + curpath)
+            except:
+                print('Unable to write: ' + curpath)
+    else:
+        try:
+            st.write(curpath, format="MSEED", reclen=512)
+            os.system('./DQseed -Q -b 512' + ' ' + curpath)
+        except:
+            print('Unable to write: ' + curpath)
     return
