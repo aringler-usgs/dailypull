@@ -6,10 +6,11 @@ import os
 import glob
 import random
 import string
+import shutil
 from obspy.core import read
 
 
-def sncls_CWB(stime, ip, net, debug=True):
+def sncls_CWB(stime, ip, net, debug=False):
     # Get all the sncls that are on the CWB
     sncls = []
     javastr = 'java -jar CWBQuery.jar '
@@ -28,7 +29,7 @@ def sncls_CWB(stime, ip, net, debug=True):
     return sncls
 
 
-def grab_CWB_data_jar(sncls, stime, ip, debug=True):
+def grab_CWB_data_jar(sncls, stime, ip, debug=False):
     new_avails = []
     letters = string.ascii_uppercase
     stringRan = ''.join(random.choice(letters) for _ in range(10))
@@ -77,14 +78,15 @@ def grab_CWB_data_jar(sncls, stime, ip, debug=True):
         fname += '_' + str(stime.year)
         fname += '_' + str(stime.julday) + '.msd'
         if os.path.isfile(fname):
+            os.system('./DQseed -Q -b 512' + ' ' + fname)
             st = read(fname, details = True)
-            safe_write(st, stime)
+            safe_write_no_read(fname, stime)
             new_avails.append(get_availability(st))
             os.remove(fname)
         else:
             new_avails.append(0.)
-    if os.path.isfile(fileName):
-        os.remove(fileName)
+    #if os.path.isfile(fileName):
+    os.remove(fileName)
     return new_avails
 
 
@@ -175,6 +177,46 @@ def safe_add(st1, st2):
     return st
 
 
+def safe_write_no_read(filename, time, debug=False):
+    path = '/msd'
+    net = filename[:2]
+    if debug:
+        print('Network: ' + net)
+    sta = filename[2:7].replace('_', '')
+    if debug:
+        print('Station: ' + sta)
+    chan = filename[7:10]
+    if debug:
+        print('Channel: ' + chan)
+    loc = filename[10:12].replace('_','')
+    if debug:
+        print('Location: ' + loc)
+    curpath = path + '/' + net + '_' + sta
+    if not os.path.exists(curpath):
+        os.mkdir(curpath)
+    curpath += '/' + str(time.year)
+    if not os.path.exists(curpath):
+        os.mkdir(curpath)
+    curpath += '/' + str(time.julday).zfill(3)
+    if not os.path.exists(curpath):
+        os.mkdir(curpath)
+    curpath += '/' + loc + '_' + chan + '.512.seed'
+    # Check if a file already exists    
+    if os.path.exists(curpath):
+        if os.path.getsize(curpath) < os.path.getsize(filename):
+            shutil.copy2(filename, curpath) 
+        elif os.path.getsize(curpath) > os.path.getsize(filename):
+            print('Unable to write: ' + curpath + ' existing file bigger')
+    else:
+        try:        
+            shutil.copy2(filename, curpath) 
+        except:            
+            print('Unable to write: ' + curpath)
+    return
+
+
+
+
 def safe_write(st, time):
     path = '/msd/'
     if len(st) > 0:
@@ -195,14 +237,14 @@ def safe_write(st, time):
             os.system('./DQseed -Q -b 512' + ' ' + curpath)
         except:
             print('Unable to write: ' + curpath)
-    elif os.path.exists(curpath):
-        st2 = read(curpath)
-        if get_availability(st) > get_availability(st2):
-            try:
-                st.write(curpath, format="MSEED", reclen=512)
-                os.system('./DQseed -Q -b 512' + ' ' + curpath)
-            except:
-                print('Unable to write: ' + curpath)
+    #elif os.path.exists(curpath):
+    #    st2 = read(curpath)
+    #    if get_availability(st) > get_availability(st2):
+    #       try:
+    #            st.write(curpath, format="MSEED", reclen=512)
+    #            os.system('./DQseed -Q -b 512' + ' ' + curpath)
+    #        except:
+    #            print('Unable to write: ' + curpath)
     else:
         try:
             st.write(curpath, format="MSEED", reclen=512)

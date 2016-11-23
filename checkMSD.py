@@ -131,7 +131,7 @@ def emaillog(time):
 if __name__ == "__main__":
 
     # Here is a debug flag
-    debug = False
+    debug = True
 
     # Here is a timing flag
     time = True
@@ -147,14 +147,16 @@ if __name__ == "__main__":
 
     # Make a list of days
     days = [current_day - 24*60*60*(days_back + x) for x in range(number_of_days)]
-
     # Add in a few more special days.
     extradays = [180, 120, 90, 60, 30]
     for day in extradays:
         days.append(current_day -day*24*60*60)
     networks = ['IU', 'CU', 'US', 'IC', 'GT', 'IW', 'NE', 'XX', 'GS', 'NQ']
     for net in networks:
-
+        if debug:
+            print('On network: ' + net)
+            cnettime = UTCDateTime.now()
+            print('Start Time: ' + str(cnettime))
         try:
             sp = Parser('/APPS/metadata/SEED/' + net + '.dataless')
             clients = {'NEIC': True, 'ASL': True}
@@ -166,12 +168,15 @@ if __name__ == "__main__":
         def proc_part(x):
             return process_day_net(x, net, sp, clients)
 
-        # pool = Pool(4)
-        # avails = pool.map(proc_part, days)
         avails = []
-        for day in days:
+        for idx, day in enumerate(days):
+            if debug:
+                print('On day: ' + str(idx+1) + ' of ' + str(len(days)))
+                print('Current scan day: ' + str(day))
             avails.append(proc_part(day))
         avails = [item for sublist in avails for item in sublist]
         writelog(avails, net, stime)
-
+        if debug:
+            print('Time for network: ' + str(UTCDateTime.now() - cnettime))
     emaillog(stime)
+    os.system('rm -rf temp*')
